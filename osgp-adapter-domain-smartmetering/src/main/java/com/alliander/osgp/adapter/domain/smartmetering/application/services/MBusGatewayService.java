@@ -23,7 +23,10 @@ import com.alliander.osgp.domain.core.exceptions.InactiveDeviceException;
 import com.alliander.osgp.domain.core.exceptions.MBusChannelNotFoundException;
 import com.alliander.osgp.domain.core.repositories.SmartMeterRepository;
 import com.alliander.osgp.domain.core.valueobjects.smartmetering.CoupleMbusDeviceRequestData;
+import com.alliander.osgp.domain.core.valueobjects.smartmetering.DeCoupleMbusDeviceRequestData;
 import com.alliander.osgp.domain.core.valueobjects.smartmetering.GetMBusDeviceOnChannelRequestData;
+import com.alliander.osgp.dto.valueobjects.smartmetering.DeCoupleMbusDeviceDto;
+import com.alliander.osgp.dto.valueobjects.smartmetering.DeCoupleMbusDeviceResponseDto;
 import com.alliander.osgp.dto.valueobjects.smartmetering.GetMBusDeviceOnChannelRequestDataDto;
 import com.alliander.osgp.dto.valueobjects.smartmetering.MbusChannelElementsDto;
 import com.alliander.osgp.dto.valueobjects.smartmetering.MbusChannelElementsResponseDto;
@@ -33,6 +36,7 @@ import com.alliander.osgp.shared.exceptionhandling.FunctionalExceptionType;
 import com.alliander.osgp.shared.exceptionhandling.OsgpException;
 import com.alliander.osgp.shared.infra.jms.DeviceMessageMetadata;
 import com.alliander.osgp.shared.infra.jms.RequestMessage;
+import com.alliander.osgp.shared.infra.jms.ResponseMessageResultType;
 
 @Service(value = "domainSmartMeteringMBusGatewayService")
 @Transactional(value = "transactionManager")
@@ -49,6 +53,9 @@ public class MBusGatewayService {
 
     @Autowired
     private DomainHelperService domainHelperService;
+
+    @Autowired
+    private InstallationService installationService;
 
     public MBusGatewayService() {
         // Parameterless constructor required for transactions...
@@ -78,6 +85,7 @@ public class MBusGatewayService {
             this.checkAndHandleInactiveMbusDevice(mbusDevice);
             this.checkAndHandleIfGivenMBusAlreadyCoupled(mbusDevice);
             final MbusChannelElementsDto mbusChannelElementsDto = this.makeMbusChannelElementsDto(mbusDevice);
+
             final RequestMessage requestMessage = new RequestMessage(deviceMessageMetadata.getCorrelationUid(),
                     deviceMessageMetadata.getOrganisationIdentification(),
                     deviceMessageMetadata.getDeviceIdentification(), gatewayDevice.getIpAddress(),
@@ -87,6 +95,41 @@ public class MBusGatewayService {
         } catch (final FunctionalException ex) {
             throw ex;
         }
+    }
+
+    public void deCoupleMbusDevice(final DeviceMessageMetadata deviceMessageMetadata,
+            final DeCoupleMbusDeviceRequestData requestData) throws FunctionalException {
+
+        final String deviceIdentification = deviceMessageMetadata.getDeviceIdentification();
+        final String mbusDeviceIdentification = requestData.getMbusDeviceIdentification();
+
+        LOGGER.debug("deCoupleMbusDevice for organizationIdentification: {} for gateway: {}, m-bus device {} ",
+                deviceMessageMetadata.getOrganisationIdentification(), deviceIdentification, mbusDeviceIdentification);
+
+        final SmartMeter gatewayDevice = this.domainHelperService.findSmartMeter(deviceIdentification);
+        final SmartMeter mbusDevice = this.domainHelperService.findSmartMeter(mbusDeviceIdentification);
+
+        this.checkAndHandleInactiveMbusDevice(mbusDevice);
+
+        // If Mbus device is already decoupled, return response OK, otherwise,
+        // decouple it.
+        if (this.isMbusDeviceCoupled(mbusDevice)) {
+            this.installationService.handleResponse("deCoupleMbusDevice", deviceMessageMetadata,
+                    ResponseMessageResultType.OK, null);
+        } else {
+            final DeCoupleMbusDeviceDto deCoupleMbusDeviceDto = new DeCoupleMbusDeviceDto(mbusDeviceIdentification,
+                    mbusDevice.getChannel());
+            final RequestMessage requestMessage = new RequestMessage(deviceMessageMetadata.getCorrelationUid(),
+                    deviceMessageMetadata.getOrganisationIdentification(),
+                    deviceMessageMetadata.getDeviceIdentification(), gatewayDevice.getIpAddress(),
+                    deCoupleMbusDeviceDto);
+            this.osgpCoreRequestMessageSender.send(requestMessage, deviceMessageMetadata.getMessageType(),
+                    deviceMessageMetadata.getMessagePriority(), deviceMessageMetadata.getScheduleTime());
+        }
+    }
+
+    private boolean isMbusDeviceCoupled(final SmartMeter mbusDevice) {
+        return mbusDevice.getChannel() == null;
     }
 
     public void handleCoupleMbusDeviceResponse(final DeviceMessageMetadata deviceMessageMetadata,
@@ -159,6 +202,25 @@ public class MBusGatewayService {
         this.smartMeteringDeviceRepository.save(mbusDevice);
     }
 
+    /**
+     * Updates the M-Bus device identified in the input part of the
+     * {@code deCoupleMbusResponseDto}.
+     *
+     * @param deCoupleMbusDeviceResponseDto
+     * @throws FunctionalException
+     */
+    public void handleDeCoupleMbusDeviceResponse(final DeCoupleMbusDeviceResponseDto deCoupleMbusDeviceResponseDto)
+            throws FunctionalException {
+
+        final String mbusDeviceIdentification = deCoupleMbusDeviceResponseDto.getmBusDeviceIdentification();
+        final SmartMeter mbusDevice = this.domainHelperService.findSmartMeter(mbusDeviceIdentification);
+
+        mbusDevice.setChannel(null);
+        mbusDevice.setMbusPrimaryAddress(null);
+        mbusDevice.updateGatewayDevice(null);
+        this.smartMeteringDeviceRepository.save(mbusDevice);
+    }
+
     private MbusChannelElementsDto makeMbusChannelElementsDto(final SmartMeter mbusDevice) {
 
         final String mbusDeviceIdentification = mbusDevice.getDeviceIdentification();
@@ -171,8 +233,13 @@ public class MBusGatewayService {
         final String mbusManufacturerIdentification = mbusDevice.getMbusManufacturerIdentification();
         final Short mbusVersion = mbusDevice.getMbusVersion();
         final Short mbusDeviceTypeIdentification = mbusDevice.getMbusDeviceTypeIdentification();
+        Short primaryAddress = null;
 
-        return new MbusChannelElementsDto(mbusDeviceIdentification, mbusIdentificationNumber,
+        if (mbusDevice.getMbusPrimaryAddress() != null) {
+            primaryAddress = mbusDevice.getMbusPrimaryAddress();
+        }
+
+        return new MbusChannelElementsDto(primaryAddress, mbusDeviceIdentification, mbusIdentificationNumber,
                 mbusManufacturerIdentification, mbusVersion, mbusDeviceTypeIdentification);
     }
 
@@ -256,7 +323,8 @@ public class MBusGatewayService {
 
     private short getPrimaryAddress(final MbusChannelElementsResponseDto mbusChannelElementsResponseDto,
             final short channel) {
-        // because the List is 0-based, we need to subtract 1
+        // because the List is 0-based, it is needed to subtract 1 to get the
+        // ChannelElements for the desired channel.
         return mbusChannelElementsResponseDto.getRetrievedChannelElements().get(channel - 1).getPrimaryAddress();
     }
 }
