@@ -7,44 +7,72 @@
  */
 package com.alliander.osgp.adapter.ws.core.application.mapping;
 
-import ma.glasnost.orika.CustomConverter;
-import ma.glasnost.orika.MappingContext;
-import ma.glasnost.orika.metadata.Type;
+import java.util.GregorianCalendar;
 
-import com.alliander.osgp.adapter.ws.shared.db.domain.repositories.writable.WritableFirmwareRepository;
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.alliander.osgp.adapter.ws.schema.core.firmwaremanagement.DeviceFirmware;
+import com.alliander.osgp.adapter.ws.schema.core.firmwaremanagement.Firmware;
+import com.alliander.osgp.adapter.ws.shared.db.domain.repositories.writable.WritableFirmwareFileRepository;
 import com.alliander.osgp.domain.core.entities.Device;
-import com.alliander.osgp.domain.core.entities.DeviceFirmware;
-import com.alliander.osgp.domain.core.entities.Firmware;
+import com.alliander.osgp.domain.core.entities.DeviceFirmwareFile;
+import com.alliander.osgp.domain.core.entities.FirmwareFile;
 import com.alliander.osgp.domain.core.repositories.DeviceRepository;
 
+import ma.glasnost.orika.MappingContext;
+import ma.glasnost.orika.converter.BidirectionalConverter;
+import ma.glasnost.orika.metadata.Type;
+
 class DeviceFirmwareConverter extends
-        CustomConverter<com.alliander.osgp.adapter.ws.schema.core.firmwaremanagement.DeviceFirmware, DeviceFirmware> {
+        BidirectionalConverter<com.alliander.osgp.adapter.ws.schema.core.firmwaremanagement.DeviceFirmware, DeviceFirmwareFile> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(DeviceFirmwareConverter.class);
 
     private DeviceRepository deviceRepository;
-    private WritableFirmwareRepository firmwareRepository;
+    private WritableFirmwareFileRepository firmwareFileRepository;
 
     public DeviceFirmwareConverter(final DeviceRepository deviceRepository,
-            final WritableFirmwareRepository firmwareRepository) {
+            final WritableFirmwareFileRepository firmwareFileRepository) {
         this.deviceRepository = deviceRepository;
-        this.firmwareRepository = firmwareRepository;
+        this.firmwareFileRepository = firmwareFileRepository;
     }
 
     @Override
-    public DeviceFirmware convert(
-            final com.alliander.osgp.adapter.ws.schema.core.firmwaremanagement.DeviceFirmware source,
-            final Type<? extends DeviceFirmware> destination, final MappingContext context) {
-
+    public DeviceFirmwareFile convertTo(final DeviceFirmware source, final Type<DeviceFirmwareFile> destinationType,
+            final MappingContext mappingContext) {
         final Device device = this.deviceRepository.findByDeviceIdentification(source.getDeviceIdentification());
-        final Firmware firmware = this.firmwareRepository.findOne(Long.valueOf(source.getFirmware().getId()));
+        final FirmwareFile firmwareFile = this.firmwareFileRepository
+                .findOne(Long.valueOf(source.getFirmware().getId()));
 
-        final DeviceFirmware output = new DeviceFirmware();
+        return new DeviceFirmwareFile(device, firmwareFile,
+                source.getInstallationDate().toGregorianCalendar().getTime(), source.getInstalledBy());
+    }
 
-        output.setActive(source.isActive());
-        output.setInstallationDate(source.getInstallationDate().toGregorianCalendar().getTime());
-        output.setInstalledBy(source.getInstalledBy());
-        output.setDevice(device);
-        output.setFirmware(firmware);
+    @Override
+    public DeviceFirmware convertFrom(final DeviceFirmwareFile source, final Type<DeviceFirmware> destinationType,
+            final MappingContext mappingContext) {
+        final DeviceFirmware destination = new DeviceFirmware();
+        destination.setDeviceIdentification(source.getDevice().getDeviceIdentification());
 
-        return output;
+        final Firmware firmware = this.mapperFacade.map(source.getFirmwareFile(), Firmware.class, mappingContext);
+        destination.setFirmware(firmware);
+
+        final GregorianCalendar gCalendar = new GregorianCalendar();
+        gCalendar.setTime(source.getInstallationDate());
+
+        try {
+            destination.setInstallationDate(DatatypeFactory.newInstance().newXMLGregorianCalendar(gCalendar));
+        } catch (final DatatypeConfigurationException e) {
+            // This won't happen, so no further action is needed.
+            LOGGER.error("Bad date format in the installation date", e);
+        }
+
+        destination.setInstalledBy(source.getInstalledBy());
+        destination.setActive(true);
+        return destination;
     }
 }
