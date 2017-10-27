@@ -31,10 +31,6 @@ import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.GetSt
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.GetStatusAsyncResponse;
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.GetStatusRequest;
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.GetStatusResponse;
-import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.ResumeScheduleAsyncRequest;
-import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.ResumeScheduleAsyncResponse;
-import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.ResumeScheduleRequest;
-import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.ResumeScheduleResponse;
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.SetSwitchAsyncRequest;
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.SetSwitchAsyncResponse;
 import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.SetSwitchRequest;
@@ -45,7 +41,6 @@ import com.alliander.osgp.domain.core.entities.Device;
 import com.alliander.osgp.domain.core.valueobjects.LightValue;
 import com.alliander.osgp.domain.core.exceptions.ValidationException;
 import com.alliander.osgp.domain.core.valueobjects.DeviceStatus;
-import com.alliander.osgp.domain.core.valueobjects.ResumeScheduleData;
 import com.alliander.osgp.shared.exceptionhandling.ComponentType;
 import com.alliander.osgp.shared.exceptionhandling.FunctionalException;
 import com.alliander.osgp.shared.exceptionhandling.FunctionalExceptionType;
@@ -107,7 +102,7 @@ public class LoadManagementAdHocManagementEndpoint {
         return response;
     }
 
-    // === SET LIGHT ===
+    // === SET SWITCH ===
 
     @PayloadRoot(localPart = "SetSwitchRequest", namespace = NAMESPACE)
     @ResponsePayload
@@ -214,75 +209,13 @@ public class LoadManagementAdHocManagementEndpoint {
                     if (deviceStatus != null) {
                         response.setDeviceStatus(this.adHocManagementMapper.map(deviceStatus,
                                 com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.DeviceStatus.class));
+
                     }
                 }
             }
         } catch (final Exception e) {
             this.handleException(e);
         }
-
-        return response;
-    }
-
-    // === RESUME SCHEDULE ===
-
-    @PayloadRoot(localPart = "ResumeScheduleRequest", namespace = NAMESPACE)
-    @ResponsePayload
-    public ResumeScheduleAsyncResponse resumeSchedule(
-            @OrganisationIdentification final String organisationIdentification,
-            @RequestPayload final ResumeScheduleRequest request) throws OsgpException {
-
-        LOGGER.info("Resume Schedule Request received from organisation: {} for device: {}.",
-                organisationIdentification, request.getDeviceIdentification());
-
-        final ResumeScheduleAsyncResponse response = new ResumeScheduleAsyncResponse();
-
-        try {
-            final ResumeScheduleData resumeScheduleData = new ResumeScheduleData();
-            if (request.getIndex() != null) {
-                resumeScheduleData.setIndex(request.getIndex());
-            }
-            resumeScheduleData.setIsImmediate(request.isIsImmediate());
-
-            final String correlationUid = this.adHocManagementService.enqueueResumeScheduleRequest(
-                    organisationIdentification, request.getDeviceIdentification(), resumeScheduleData);
-
-            final AsyncResponse asyncResponse = new AsyncResponse();
-            asyncResponse.setCorrelationUid(correlationUid);
-            asyncResponse.setDeviceId(request.getDeviceIdentification());
-            response.setAsyncResponse(asyncResponse);
-        } catch (final MethodConstraintViolationException e) {
-            LOGGER.error(EXCEPTION_OCCURRED, e);
-            throw new FunctionalException(FunctionalExceptionType.VALIDATION_ERROR, COMPONENT_WS_LOAD_MANAGEMENT,
-                    new ValidationException(e.getConstraintViolations()));
-        } catch (final Exception e) {
-            this.handleException(e);
-        }
-
-        return response;
-    }
-
-    @PayloadRoot(localPart = "ResumeScheduleAsyncRequest", namespace = NAMESPACE)
-    @ResponsePayload
-    public ResumeScheduleResponse getResumeScheduleResponse(
-            @OrganisationIdentification final String organisationIdentification,
-            @RequestPayload final ResumeScheduleAsyncRequest request) throws OsgpException {
-
-        LOGGER.info("Resume Schedule Async Request received from organisation: {} for device: {}.",
-                organisationIdentification, request.getAsyncRequest().getDeviceId());
-
-        final ResumeScheduleResponse response = new ResumeScheduleResponse();
-
-        try {
-            final ResponseMessage message = this.adHocManagementService.dequeueResumeScheduleResponse(request
-                    .getAsyncRequest().getCorrelationUid());
-            if (message != null) {
-                response.setResult(OsgpResultType.fromValue(message.getResult().getValue()));
-            }
-        } catch (final Exception e) {
-            this.handleException(e);
-        }
-
         return response;
     }
 

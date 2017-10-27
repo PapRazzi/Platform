@@ -20,7 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.alliander.osgp.adapter.domain.shared.FilterLightAndTariffValuesHelper;
 import com.alliander.osgp.adapter.domain.shared.GetStatusResponse;
 import com.alliander.osgp.domain.core.entities.Device;
 import com.alliander.osgp.domain.core.entities.DeviceOutputSetting;
@@ -139,11 +138,7 @@ public class AdHocManagementService extends AbstractService {
             final DeviceStatus status = this.domainCoreMapper.map(deviceStatusDto, DeviceStatus.class);
             try {
                 final Device dev = this.deviceDomainService.searchDevice(deviceIdentification);
-                if (LightMeasurementDevice.LMD_TYPE.equals(dev.getDeviceType())) {
-                    this.handleLmd(status, response);
-                } else {
-                    this.handleSsld(deviceIdentification, status, allowedDomainType, response);
-                }
+                this.handleSsld(deviceIdentification, status, allowedDomainType, response);
             } catch (final FunctionalException e) {
                 LOGGER.error("Caught FunctionalException", e);
             }
@@ -152,23 +147,6 @@ public class AdHocManagementService extends AbstractService {
         this.webServiceResponseMessageSender.send(new ResponseMessage(correlationUid, organisationIdentification,
                 deviceIdentification, response.getResult(), response.getOsgpException(), response
                 .getDeviceStatusMapped()));
-    }
-
-    private void handleLmd(final DeviceStatus status, final GetStatusResponse response) {
-        if (status != null) {
-            final DeviceStatusMapped deviceStatusMapped = new DeviceStatusMapped(null, status.getLightValues(),
-                    status.getPreferredLinkType(), status.getActualLinkType(), status.getLightType(),
-                    status.getEventNotificationsMask());
-            // Return mapped status using GetStatusResponse instance.
-            response.setDeviceStatusMapped(deviceStatusMapped);
-        } else {
-            // No status received, create bad response.
-            response.setDeviceStatusMapped(null);
-            response.setOsgpException(new TechnicalException(ComponentType.DOMAIN_LOAD_MANAGEMENT,
-                    "Light measurement device was not able to report light sensor status",
-                    new NoDeviceResponseException()));
-            response.setResult(ResponseMessageResultType.NOT_OK);
-        }
     }
 
     private void handleSsld(final String deviceIdentification, final DeviceStatus status,
@@ -187,10 +165,13 @@ public class AdHocManagementService extends AbstractService {
         if (status != null) {
             // Map the DeviceStatus for SSLD.
             final DeviceStatusMapped deviceStatusMapped = new DeviceStatusMapped(
-                    FilterLightAndTariffValuesHelper.filterTariffValues(status.getLightValues(), dosMap,
-                            allowedDomainType), FilterLightAndTariffValuesHelper.filterLightValues(
-                                    status.getLightValues(), dosMap, allowedDomainType), status.getPreferredLinkType(),
-                                    status.getActualLinkType(), status.getLightType(), status.getEventNotificationsMask());
+                    null,
+                    status.getLightValues(),
+                    status.getPreferredLinkType(),
+                    status.getActualLinkType(),
+                    status.getLightType(),
+                    status.getEventNotificationsMask()
+            );
 
             // Update the relay overview with the relay information.
             this.updateDeviceRelayOverview(ssld, deviceStatusMapped);

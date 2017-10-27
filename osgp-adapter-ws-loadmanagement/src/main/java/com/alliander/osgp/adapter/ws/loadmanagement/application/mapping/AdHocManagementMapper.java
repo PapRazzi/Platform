@@ -7,6 +7,7 @@
  */
 package com.alliander.osgp.adapter.ws.loadmanagement.application.mapping;
 
+import com.alliander.osgp.adapter.ws.schema.loadmanagement.adhocmanagement.DeviceStatus;
 import ma.glasnost.orika.MapperFactory;
 import ma.glasnost.orika.impl.ConfigurableMapper;
 
@@ -19,5 +20,11 @@ public class AdHocManagementMapper extends ConfigurableMapper {
     @Override
     public void configure(final MapperFactory mapperFactory) {
         mapperFactory.getConverterFactory().registerConverter(new XMLGregorianCalendarToDateTimeConverter());
+
+        mapperFactory
+                .classMap(com.alliander.osgp.domain.core.valueobjects.DeviceStatus.class,
+                        DeviceStatus.class)
+                .field("lightValues", "switchValues")
+                .byDefault().register();
     }
 }
