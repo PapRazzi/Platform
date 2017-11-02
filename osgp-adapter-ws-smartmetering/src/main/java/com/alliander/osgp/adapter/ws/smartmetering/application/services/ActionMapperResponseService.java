@@ -21,7 +21,6 @@ import org.springframework.validation.annotation.Validated;
 import com.alliander.osgp.adapter.ws.schema.smartmetering.bundle.AllResponses;
 import com.alliander.osgp.adapter.ws.schema.smartmetering.bundle.BundleResponse;
 import com.alliander.osgp.adapter.ws.schema.smartmetering.bundle.ObjectFactory;
-import com.alliander.osgp.adapter.ws.schema.smartmetering.common.OsgpResultType;
 import com.alliander.osgp.adapter.ws.schema.smartmetering.common.Response;
 import com.alliander.osgp.adapter.ws.smartmetering.application.mapping.AdhocMapper;
 import com.alliander.osgp.adapter.ws.smartmetering.application.mapping.CommonMapper;
@@ -141,10 +140,6 @@ public class ActionMapperResponseService {
             final ConfigurableMapper mapper = this.getMapper(actionValueResponseObject);
             final Class<?> clazz = this.getClazz(actionValueResponseObject);
             final Response response = this.doMap(actionValueResponseObject, mapper, clazz);
-
-            if (OsgpResultType.OK == OsgpResultType.fromValue(meterResponseData.getResultType().getValue())) {
-                response.setResult(OsgpResultType.OK);
-            }
 
             allResponses.getResponseList().add(response);
         }
